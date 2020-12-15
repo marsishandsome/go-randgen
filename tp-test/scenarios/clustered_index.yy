@@ -71,7 +71,7 @@
 
 }
 
-init: create_table; insert_data
+init: set @@tidb_enable_clustered_index = 1; create_table; insert_data
 
 txn: rand_queries
 
@@ -91,14 +91,21 @@ create_table:
         key_c_bit
         key_c_datetime
         key_c_timestamp
-    )
+    );
+    set_tiflash_replica
+
+set_tiflash_replica:
+    alter table t set tiflash replica 1; select sleep(20)
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t]) */") }
 
 char_type:
-    varchar(40)
-|   text
-|   char(40)
-|   blob
-|   binary
+    varchar(255)
+/*|   text(255)*/
+|   char(255)
+/*|   blob(255)*/
+|   binary(255)
 
 key_primary:
  |  , primary key(c_int)
@@ -156,10 +163,10 @@ rand_queries:
  |  [weight=3] ddl; rand_query
 
 rand_query:
-    [weight=0.3] common_select maybe_for_update
- |  [weight=0.2] (common_select maybe_for_update) union_or_union_all (common_select maybe_for_update)
- |  [weight=0.3] agg_select maybe_for_update
- |  [weight=0.2] (agg_select maybe_for_update) union_or_union_all (agg_select maybe_for_update)
+    [weight=0.3] common_select
+ |  [weight=0.2] (common_select) union_or_union_all (common_select)
+ |  [weight=0.3] agg_select
+ |  [weight=0.2] (agg_select) union_or_union_all (agg_select)
  |  [weight=0.5] common_insert
  |  [weight=0.2] switch_stmts
  |  common_update
@@ -194,12 +201,12 @@ predicate:
  |  { print(util.choice({'c_decimal', 'c_double', 'c_datetime', 'c_timestamp', 'c_bit'})) } is_null_or_not
 
 common_select:
-    select selected_cols from t where predicate
- |  select selected_cols from t where predicates
+    select_tiflash_hint selected_cols from t where predicate
+ |  select_tiflash_hint selected_cols from t where predicates
 
 agg_select:
-    select count(*) from t where predicates
- |  select sum(c_int) from t where predicates
+    select_tiflash_hint count(*) from t where predicates
+ |  select_tiflash_hint sum(c_int) from t where predicates
 
 assignments: [weight=3] assignment | assignment, assignments
 
@@ -240,8 +247,8 @@ ddl:
     add_index
 |   drop_index
 |   add_column
-|   drop_column
-|   admin check table t
+/*|   drop_column*/
+/*|   admin check table t*/
 
 add_index:
     alter table t add index {

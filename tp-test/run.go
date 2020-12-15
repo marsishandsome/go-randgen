@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
+	//"github.com/go-sql-driver/mysql"
 	"github.com/zyguan/sqlz"
 	"github.com/zyguan/sqlz/resultset"
 
@@ -182,12 +182,13 @@ func checkTables(ctx context.Context, db *sql.DB, name string) (map[string]strin
 }
 
 func checkTable(ctx context.Context, db *sql.DB, name string) (string, error) {
-	_, err := db.ExecContext(ctx, "admin check table "+name)
+	// https://github.com/pingcap/tidb/issues/21784
+	/*_, err := db.ExecContext(ctx, "admin check table "+name)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); !ok || e.Number != 1064 {
 			return "", err
 		}
-	}
+	}*/
 	rows, err := db.QueryContext(ctx, "select * from "+name)
 	if err != nil {
 		return "", err

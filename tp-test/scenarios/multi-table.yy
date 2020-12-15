@@ -52,7 +52,7 @@
     T.both_parted = function() return T.count_parted + T.count_create_like == 2 end
 }
 
-init: create_table; insert_data
+init: create_table; set_tiflash_replica; insert_data
 
 txn: rand_queries
 
@@ -61,6 +61,12 @@ create_table:
     create table t2 { T.current_table = 2 } like t1 { T.count_create_like = T.count_create_like + 1; T.mark_dup() }
  |  create table t1 { T.current_table = 1 } table_defs;
     create table t2 { T.current_table = 2 } table_defs
+
+set_tiflash_replica:
+    alter table t1 set tiflash replica 1; alter table t2 set tiflash replica 1; select sleep(20)
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t1, t2]) */") }
 
 key_primary:
  |  , primary key(c_int) { T.mark_id('c_int') }
@@ -124,7 +130,7 @@ parted_by_time:
 insert_data:
     insert into t1 values next_row_t1, next_row_t1, next_row_t1, next_row_t1, next_row_t1;
     insert into t1 values next_row_t1, next_row_t1, next_row_t1, next_row_t1, next_row_t1;
-    insert into t2 select * from t1 { T.c_int.seq2._n = T.c_int.seq1._n }
+    insert into t2 select_tiflash_hint * from t1 { T.c_int.seq2._n = T.c_int.seq1._n }
  |  insert into t1 values next_row_t1, next_row_t1, next_row_t1, next_row_t1, next_row_t1;
     insert into t1 values next_row_t1, next_row_t1, next_row_t1, next_row_t1, next_row_t1;
     insert into t2 values next_row_t2, next_row_t2, next_row_t2, next_row_t2, next_row_t2;
@@ -160,9 +166,9 @@ rand_queries:
  |  [weight=9] rand_query; rand_queries
 
 rand_query:
-    select_simple_join maybe_for_update
- |  (select_simple_join maybe_for_update) union_or_union_all (select_simple_join maybe_for_update)
- |  select_simple_subquery maybe_for_update
+    select_simple_join
+ |  (select_simple_join) union_or_union_all (select_simple_join)
+ |  select_simple_subquery
  |  select_apply_point_get
  |  update_multi_tables
  |  delete_multi_tables
@@ -203,33 +209,33 @@ predicate2:
 
 
 select_simple_join:
-    [weight=3] select rand_hint * from t1, t2 where predicates
- |  select rand_hint * from t1 rand_join t2 on predicate1
- |  select rand_hint * from t1 rand_join t2 on predicate1 where predicates
+    [weight=3] select_tiflash_hint rand_hint * from t1, t2 where predicates
+ |  select_tiflash_hint rand_hint * from t1 rand_join t2 on predicate1
+ |  select_tiflash_hint rand_hint * from t1 rand_join t2 on predicate1 where predicates
 
 select_simple_subquery:
-    select * from t1 where { T.current_col = T.rand_col(); print(T.current_col) } in (subquery_for_t1)
- |  select * from t1 where { T.current_col = T.rand_col(); print(T.current_col) } rand_cmp all_or_any_or_some (subquery_for_t1)
+    select_tiflash_hint * from t1 where { T.current_col = T.rand_col(); print(T.current_col) } in (subquery_for_t1)
+ |  select_tiflash_hint * from t1 where { T.current_col = T.rand_col(); print(T.current_col) } rand_cmp all_or_any_or_some (subquery_for_t1)
 
 select_apply_point_get:
-    select (select t2.{ c = T.rand_col(); print(c) } from t2 where predicates order by t2.{ print(c) } limit 1 maybe_for_update) x from t1 { print("/* force-unordered */") }
- |  select (select t2.{ c = T.rand_col(); print(c) } from t2 where t2.{ print(c) } rand_cmp t1.{ print(c) } and t2.c_int = rand_c_int order by t2.{ print(c) } limit 1 maybe_for_update) x from t1 { print("/* force-unordered */") }
- |  select (select t2.{ c = T.rand_col(); print(c) } from t2 where t2.{ print(c) } rand_cmp t1.{ print(c) } and t2.c_int in (rand_c_int, rand_c_int, rand_c_int) order by t2.{ print(c) } limit 1 maybe_for_update) x from t1 { print("/* force-unordered */") }
+    select_tiflash_hint (select_tiflash_hint t2.{ c = T.rand_col(); print(c) } from t2 where predicates order by t2.{ print(c) } limit 1) x from t1 { print("/* force-unordered */") }
+ |  select_tiflash_hint (select_tiflash_hint t2.{ c = T.rand_col(); print(c) } from t2 where t2.{ print(c) } rand_cmp t1.{ print(c) } and t2.c_int = rand_c_int order by t2.{ print(c) } limit 1) x from t1 { print("/* force-unordered */") }
+ |  select_tiflash_hint (select_tiflash_hint t2.{ c = T.rand_col(); print(c) } from t2 where t2.{ print(c) } rand_cmp t1.{ print(c) } and t2.c_int in (rand_c_int, rand_c_int, rand_c_int) order by t2.{ print(c) } limit 1) x from t1 { print("/* force-unordered */") }
 
 subquery_for_t1:
     select_from_t2_only
  |  select_from_t2_with_t1
 
 select_from_t2_only:
-    select { print(T.current_col) } from t2 where c_int = rand_c_int
- |  select { print(T.current_col) } from t2 where c_int in (rand_c_int, rand_c_int, rand_c_int)
- |  select { print(T.current_col) } from t2 where c_int between { k = T.c_int.seq2:rand(); print(k) } and { print(k+3) }
- |  select { print(T.current_col) } from t2 where c_str = rand_c_str
- |  select { print(T.current_col) } from t2 where c_decimal < { local r = T.c_decimal.range; print((r.max-r.min)/2+r.min) }
- |  select { print(T.current_col) } from t2 where c_datetime > rand_c_datetime
+    select_tiflash_hint { print(T.current_col) } from t2 where c_int = rand_c_int
+ |  select_tiflash_hint { print(T.current_col) } from t2 where c_int in (rand_c_int, rand_c_int, rand_c_int)
+ |  select_tiflash_hint { print(T.current_col) } from t2 where c_int between { k = T.c_int.seq2:rand(); print(k) } and { print(k+3) }
+ |  select_tiflash_hint { print(T.current_col) } from t2 where c_str = rand_c_str
+ |  select_tiflash_hint { print(T.current_col) } from t2 where c_decimal < { local r = T.c_decimal.range; print((r.max-r.min)/2+r.min) }
+ |  select_tiflash_hint { print(T.current_col) } from t2 where c_datetime > rand_c_datetime
 
 select_from_t2_with_t1:
-    select { print(T.current_col) } from t2 where predicates
+    select_tiflash_hint { print(T.current_col) } from t2 where predicates
 
 rand_assignments:
     rand_assignment

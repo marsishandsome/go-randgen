@@ -64,7 +64,14 @@ create_table:
         key_c_decimal
         key_c_datetime
         key_c_timestamp
-    )
+    ); set_tiflash_replica
+
+set_tiflash_replica:
+    alter table t set tiflash replica 1; select sleep(20)
+
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t]) */") }
 
 key_primary:
  |  , primary key(c_int)
@@ -115,10 +122,10 @@ rand_queries:
  |  [weight=9] rand_query; rand_queries
 
 rand_query:
-    [weight=0.3] common_select maybe_for_update
- |  [weight=0.2] (common_select maybe_for_update) union_or_union_all (common_select maybe_for_update)
- |  [weight=0.3] agg_select maybe_for_update
- |  [weight=0.2] (agg_select maybe_for_update) union_or_union_all (agg_select maybe_for_update)
+    [weight=0.3] common_select
+ |  [weight=0.2] (common_select) union_or_union_all (common_select)
+ |  [weight=0.3] agg_select
+ |  [weight=0.2] (agg_select) union_or_union_all (agg_select)
  |  [weight=0.5] common_insert
  |  common_update
  |  common_delete
@@ -152,12 +159,12 @@ predicate:
  |  { print(util.choice({'c_decimal', 'c_double', 'c_datetime', 'c_timestamp'})) } is_null_or_not
 
 common_select:
-    select selected_cols from t where predicate
- |  select selected_cols from t where predicates
+    select_tiflash_hint selected_cols from t where predicate
+ |  select_tiflash_hint selected_cols from t where predicates
 
 agg_select:
-    select count(*) from t where predicates
- |  select sum(c_int) from t where predicates
+    select_tiflash_hint count(*) from t where predicates
+ |  select_tiflash_hint sum(c_int) from t where predicates
 
 assignments: [weight=3] assignment | assignment, assignments
 

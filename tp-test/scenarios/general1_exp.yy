@@ -38,7 +38,13 @@ create_table:
         key_c_decimal
         key_c_datetime
         key_c_timestamp
-    )
+    ); set_tiflash_replica
+
+set_tiflash_replica:
+    alter table t set tiflash replica 1; select sleep(20)
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t]) */") }
 
 key_primary:
  |  , primary key(c_int)
@@ -90,10 +96,10 @@ rand_queries:
  |  [weight=9] rand_query; rand_queries
 
 rand_query:
-    [weight=0.3] common_select maybe_for_update
- |  [weight=0.2] (common_select maybe_for_update) union_or_union_all (common_select maybe_for_update)
- |  [weight=0.3] agg_select maybe_for_update
- |  [weight=0.2] (agg_select maybe_for_update) union_or_union_all (agg_select maybe_for_update)
+    [weight=0.3] common_select
+ |  [weight=0.2] (common_select) union_or_union_all (common_select)
+ |  [weight=0.3] agg_select
+ |  [weight=0.2] (agg_select) union_or_union_all (agg_select)
  |  [weight=0.5] common_insert
  |  common_update
  |  common_delete
@@ -108,15 +114,15 @@ maybe_write_limit: | [weight=2] order by c_int, c_str, c_double, c_decimal, c_da
 col_list: c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp
 
 common_select:
-    select col_list maybe_col_exps from t where expr order by col_list
+    select_tiflash_hint col_list maybe_col_exps from t where expr order by col_list
 
-maybe_col_exps: 
+maybe_col_exps:
   |, complex_numeric_col_exprs
 
 agg_select:
-    select count(*) from t where c_timestamp between { t = T.c_timestamp.rand(); printf("'%s'", t) } and date_add({ printf("'%s'", t) }, interval 15 day)
- |  select sum(c_int) from t where c_datetime between { t = T.c_datetime.rand(); printf("'%s'", t) } and date_add({ printf("'%s'", t) }, interval 15 day)
- |  select agg_exp from t where expr
+    select_tiflash_hint count(*) from t where c_timestamp between { t = T.c_timestamp.rand(); printf("'%s'", t) } and date_add({ printf("'%s'", t) }, interval 15 day)
+ |  select_tiflash_hint sum(c_int) from t where c_datetime between { t = T.c_datetime.rand(); printf("'%s'", t) } and date_add({ printf("'%s'", t) }, interval 15 day)
+ |  select_tiflash_hint agg_exp from t where expr
 
 common_update:
     update t set c_str = rand_c_str where c_int = rand_c_int
@@ -166,7 +172,7 @@ comparison_operator: = | >= | > | <= | < | <> | !=
 predicate:
     numeric_expr maybe_not BETWEEN numeric_expr AND numeric_expr
   | datetime_expr maybe_not BETWEEN datetime_literal AND datetime_literal
-    
+
 
 complex_numeric_col_exprs:
     [weight=2] complex_numeric_col_expr | complex_numeric_col_expr, complex_numeric_col_exprs
@@ -177,12 +183,12 @@ complex_numeric_col_expr:
   | numeric_col_expr numeric_operator rand_c_int
 
 
-numeric_col_expr:       
+numeric_col_expr:
     numeric_col_expr numeric_operator numeric_col_expr
   | rand_c_int numeric_operator numeric_col_expr
   | numeric_col_expr numeric_operator rand_c_int
   | [weight=4] c_int
-  
+
 
 numeric_expr:
     numeric_expr numeric_operator numeric_expr
@@ -197,7 +203,7 @@ simple_expr:
     numeric_literal
   | [weight=3] numeric_col
 
-agg_exps: 
+agg_exps:
     agg_exp
   | agg_exp, agg_exps
 
@@ -206,8 +212,8 @@ agg_exp:
   | COUNT(DISTINCT any_col)
   | ROUND(SUM(DISTINCT numeric_col), 3)
 
-agg_operand: 
-    [weight=2] numeric_col 
+agg_operand:
+    [weight=2] numeric_col
   | *
 
 numeric_literal: rand_c_int | rand_c_double | rand_c_decimal
@@ -227,15 +233,15 @@ datetime_expr:
   | c_datetime
   | [weight=0] date
 
-adddate_expr: 
+adddate_expr:
     ADDDATE(date_expr, INTERVAL numeric_expr unit)
-  | ADDDATE(date_expr, numeric_expr) 
+  | ADDDATE(date_expr, numeric_expr)
 
-date: 
+date:
     date_expr
   | datediff_expr
 
-date_expr: 
+date_expr:
     [weight=3] date_literal
   | [weight=0.5] DATE(datetime_expr)
   | adddate_expr
@@ -247,10 +253,10 @@ date_literal:
 
 datediff_expr: DATEDIFF(datetime_expr, datetime_expr)
 
-datetime_literal: 
+datetime_literal:
     rand_c_datetime
 
-unit: 
+unit:
     MICROSECOND
   | SECOND
   | MINUTE
@@ -261,7 +267,7 @@ unit:
   | QUARTER
   | YEAR
 
-time_expr: 
+time_expr:
     [weight=4] time_literal
   | addtime_expr
   | [weight=0.3] converttz_expr
@@ -275,7 +281,7 @@ converttz_expr: CONVERT_TZ(time_expr, timezone_expr, timezone_expr)
 
 timezone_expr: {print("'")}plus_or_minus timezone_number minutes
 
-minutes: 
+minutes:
     {print(":00'")}
   | {print(":30'")}
   | {print(":13'")}
@@ -285,12 +291,12 @@ plus_or_minus: + | -
 
 timezone_number: 00 | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 12
 
-time_literal: 
+time_literal:
     CURTIME()
   | CURRENT_TIME()
   | CURRENT_TIME
 
-timestamp_expr: 
+timestamp_expr:
     c_timestamp
   | NOW()
   | rand_c_timestamp
@@ -299,7 +305,7 @@ str_exprs:
     str_expr
   | str_expr, str_exprs
 
-str_expr: 
+str_expr:
     [weight=5] str_literal
   | concat_expr
   | [weight=5]c_str
@@ -311,7 +317,7 @@ concat_expr:
 str_literal:
     rand_c_str
 
-ascii_expr: 
+ascii_expr:
     ASCII(str_expr)
 
 bin_exp:

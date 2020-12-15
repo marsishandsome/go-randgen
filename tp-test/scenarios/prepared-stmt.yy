@@ -64,7 +64,13 @@ create_table:
         key_c_decimal
         key_c_datetime
         key_c_timestamp
-    )
+    ); set_tiflash_replica
+
+set_tiflash_replica:
+    alter table t set tiflash replica 1; select sleep(20)
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t]) */") }
 
 key_primary:
  |  , primary key(c_int)
@@ -111,15 +117,15 @@ rand_col_val: { T.cur_col:pval() }
 rand_col_vals: rand_col_val | rand_col_val, rand_col_vals
 
 prepare_stmts:
-    prepare s1 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_int = ?';
-    prepare s2 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_str = ?';
-    prepare s3 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where (c_int, c_str) = (?, ?)';
-    prepare s4 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_int in (?, ?, ?)';
-    prepare s5 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_str in (?, ?, ?)';
-    prepare s6 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where (c_int, c_str) in ((?, ?), (?, ?), (?, ?))';
-    prepare s7 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_decimal < ?';
-    prepare s8 from 'select c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_datetime between ? and ?';
-    prepare s9 from 'select count(c_int) from t where c_int >= ? and c_int < ?';
+    prepare s1 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_int = ?';
+    prepare s2 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_str = ?';
+    prepare s3 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where (c_int, c_str) = (?, ?)';
+    prepare s4 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_int in (?, ?, ?)';
+    prepare s5 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_str in (?, ?, ?)';
+    prepare s6 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where (c_int, c_str) in ((?, ?), (?, ?), (?, ?))';
+    prepare s7 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_decimal < ?';
+    prepare s8 from 'select_tiflash_hint c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp from t where c_datetime between ? and ?';
+    prepare s9 from 'select_tiflash_hint count(c_int) from t where c_int >= ? and c_int < ?';
     prepare u1 from 'update t set c_str = ? where c_int = ?';
     prepare u2 from 'update t set c_decimal = c_decimal * ? where c_int in (?, ?, ?)';
     prepare u3 from 'update t set c_int = c_int + ? where c_datetime between ? and ? order by c_int, c_str, c_decimal, c_double limit 2';
@@ -184,10 +190,10 @@ rand_queries:
  |  [weight=10] rand_query; rand_queries
 
 rand_query:
-    [weight=0.3] common_select maybe_for_update
- |  [weight=0.2] (common_select maybe_for_update) union_or_union_all (common_select maybe_for_update)
- |  [weight=0.3] agg_select maybe_for_update
- |  [weight=0.2] (agg_select maybe_for_update) union_or_union_all (agg_select maybe_for_update)
+    [weight=0.3] common_select
+ |  [weight=0.2] (common_select) union_or_union_all (common_select)
+ |  [weight=0.3] agg_select
+ |  [weight=0.2] (agg_select) union_or_union_all (agg_select)
  |  [weight=0.5] common_insert
  |  common_update
  |  common_delete

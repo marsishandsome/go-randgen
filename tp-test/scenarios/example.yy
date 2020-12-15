@@ -38,7 +38,14 @@ create_table:
         key_c_decimal
         key_c_datetime
         key_c_timestamp
-    )
+    );
+    set_tiflash_replica
+
+set_tiflash_replica:
+    alter table t set tiflash replica 1; select sleep(20)
+
+select_tiflash_hint:
+      { print("select /*+ read_from_storage(tiflash[t]) */") }
 
 key_primary:
  |  , primary key(c_int)
@@ -87,7 +94,7 @@ rand_queries:
  |  [weight=9] rand_query; rand_queries
 
 rand_query:
-    [weight=0.6] common_select maybe_for_update
+    [weight=0.6] common_select
  |  common_update
  |  common_insert
  |  common_delete
@@ -98,12 +105,12 @@ maybe_write_limit: | [weight=2] order by c_int, c_str, c_double, c_decimal limit
 col_list: c_int, c_str, c_double, c_decimal, c_datetime, c_timestamp
 
 common_select:
-    select col_list from t where c_int = rand_c_int
- |  select col_list from t where c_int in (rand_c_int, rand_c_int, rand_c_int)
- |  select col_list from t where c_int between { k = T.c_int.rand(); print(k) } and { print(k+3) }
- |  select col_list from t where c_str = rand_c_str
- |  select col_list from t where c_decimal < { local r = T.c_decimal.range; print((r.max-r.min)/2+r.min) }
- |  select col_list from t where c_datetime > rand_c_datetime
+    select_tiflash_hint col_list from t where c_int = rand_c_int
+ |  select_tiflash_hint col_list from t where c_int in (rand_c_int, rand_c_int, rand_c_int)
+ |  select_tiflash_hint col_list from t where c_int between { k = T.c_int.rand(); print(k) } and { print(k+3) }
+ |  select_tiflash_hint col_list from t where c_str = rand_c_str
+ |  select_tiflash_hint col_list from t where c_decimal < { local r = T.c_decimal.range; print((r.max-r.min)/2+r.min) }
+ |  select_tiflash_hint col_list from t where c_datetime > rand_c_datetime
 
 common_update:
     update t set c_str = rand_c_str where c_int = rand_c_int
